@@ -5,6 +5,7 @@
 // Soldered on a perfboard with a Kingbright 3 digit 7 segment common cathode LED module.
 
 // Version history:
+// 0.92: Beta for 5th prototype (button pin changed to hardware interrupt pin).
 // 0.91: Beta for 2nd prototype.
 // 0.9: Beta version removed test code & redundant variables and improved documentation.
 
@@ -22,7 +23,6 @@
 // A   A
 // 3   2
 //  A5. 
-
 // 9   1
 // 9   2
 //  10. 11
@@ -146,6 +146,11 @@ void loop()
           likes++; 
           coolDownTicks = 2000;
           eeprom_write_block((const void*)&likes, (void*)0, sizeof(likes));
+        }
+        else
+        {
+          // Cooldown wasn't done, restart cooldown as 'punishment' for pressing to soon.
+          coolDownTicks = 2000;
         }
       }
     }
