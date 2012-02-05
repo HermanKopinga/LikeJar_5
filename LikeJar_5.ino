@@ -1,13 +1,21 @@
 #include <avr/eeprom.h>
+#include <avr/sleep.h>
 
 // Like button by Herman Kopinga herman@kopinga.nl
 // Works together with a homebrew Arduino on an Atmega8
 // Soldered on a perfboard with a Kingbright 3 digit 7 segment common cathode LED module.
 
 // Version history:
-// 0.92: Beta for 5th prototype (button pin changed to hardware interrupt pin).
+// 0.94: Added basic avr Sleep untill interrupt. Removed Narcoleptic_m8, didn't work.
+// 0.93: Added Narcoleptic_m8 library and sleep function.
+// 0.92: Beta for 5th version (button pin changed to hardware interrupt pin).
 // 0.91: Beta for 2nd prototype.
 // 0.9: Beta version removed test code & redundant variables and improved documentation.
+
+// Wishlist:
+// - Glowing effect like Apple macbook.
+// - Sleep controller in between glows.
+// - Wake on like or shake.
 
 // Software based on:
 // Arduino 7 segment display example software
@@ -16,7 +24,6 @@
 // License: none whatsoever.
  
 // Global variables
-
 
 // for 3 digit display in the 'like jar' prototype 2
 //  A4. 
@@ -58,6 +65,7 @@ int n = 0;
 int buttonState = 0;          // Current state of the button.
 int lastButtonState = 0;      // Previous state of the button.
 long coolDownTicks = 0;       // Hold delay before a new button press is registered.
+unsigned long timer = 0;    
                                  
 void setup()
 {
@@ -101,7 +109,92 @@ void setup()
   // Read the number of Likes from last run.
   eeprom_read_block((void*)&likes, (void*)0, sizeof(likes));
   
-//  Serial.begin(115200);
+  /* Now it is time to enable an interrupt. In the function call
+   * attachInterrupt(A, B, C)
+   * A   can be either 0 or 1 for interrupts on pin 2 or 3.  
+   *
+   * B   Name of a function you want to execute while in interrupt A.
+   *
+   * C   Trigger mode of the interrupt pin. can be:
+   *             LOW        a low level trigger
+   *             CHANGE     a change in level trigger
+   *             RISING     a rising edge of a level trigger
+   *             FALLING    a falling edge of a level trigger
+   *
+   * In all but the IDLE sleep modes only LOW can be used.
+   */
+  attachInterrupt(0, wakeUpNow, LOW); // use interrupt 0 (pin 2) and run function
+  
+  // Serial is only used for debugging.
+  // Serial.begin(115200);
+}
+
+void wakeUpNow()        // here the interrupt is handled after wakeup
+{
+  // execute code here after wake-up before returning to the loop() function
+  // timers and code using timers (serial.print and more...) will not work here.
+  // we don't really need to execute any special functions here, since we
+  // just want the thing to wake up
+}
+
+void sleepNow()         // here we put the arduino to sleep
+{
+  /* Now is the time to set the sleep mode. In the Atmega8 datasheet
+   * http://www.atmel.com/dyn/resources/prod_documents/doc2486.pdf on page 35
+   * there is a list of sleep modes which explains which clocks and
+   * wake up sources are available in which sleep mode.
+   *
+   * In the avr/sleep.h file, the call names of these sleep modes are to be found:
+   *
+   * The 5 different modes are:
+   *     SLEEP_MODE_IDLE         -the least power savings
+   *     SLEEP_MODE_ADC
+   *     SLEEP_MODE_PWR_SAVE
+   *     SLEEP_MODE_STANDBY
+   *     SLEEP_MODE_PWR_DOWN     -the most power savings
+   *
+   * For now, we want as much power savings as possible, so we
+   * choose the according
+   * sleep mode: SLEEP_MODE_PWR_DOWN
+   *
+   */
+  set_sleep_mode(SLEEP_MODE_PWR_DOWN);   // sleep mode is set here
+
+  sleep_enable();          // enables the sleep bit in the mcucr register
+  // so sleep is possible. just a safety pin
+
+  /* Now it is time to enable an interrupt. We do it here so an
+   * accidentally pushed interrupt button doesn't interrupt
+   * our running program. if you want to be able to run
+   * interrupt code besides the sleep function, place it in
+   * setup() for example.
+   *
+   * In the function call attachInterrupt(A, B, C)
+   * A   can be either 0 or 1 for interrupts on pin 2 or 3.  
+   *
+   * B   Name of a function you want to execute at interrupt for A.
+   *
+   * C   Trigger mode of the interrupt pin. can be:
+   *             LOW        a low level triggers
+   *             CHANGE     a change in level triggers
+   *             RISING     a rising edge of a level triggers
+   *             FALLING    a falling edge of a level triggers
+   *
+   * In all but the IDLE sleep modes only LOW can be used.
+   */
+
+  attachInterrupt(0,wakeUpNow, LOW); // use interrupt 0 (pin 2) and run function
+  // wakeUpNow when pin 2 gets LOW
+
+  sleep_mode();            // here the device is actually put to sleep!!
+  // THE PROGRAM CONTINUES FROM HERE AFTER WAKING UP
+
+  sleep_disable();         // first thing after waking from sleep:
+  // disable sleep...
+  detachInterrupt(0);      // disables interrupt 0 on pin 2 so the
+  // wakeUpNow code will not be executed
+  // during normal running time.
+
 }
 
 void writeDot(byte dot) 
@@ -123,39 +216,50 @@ void loop()
 {
   // Always increase the ticks counter.
   ticks++;
+  timer++;
   
   // Decrease the cooldown if it is currently running.
   if (coolDownTicks > 0)
   {
     coolDownTicks--;
   }
-  else
-  {
-    ////////////// 
-    //Manage the button.
-    
-    // Read current button state.
-    buttonState = digitalRead(buttonpin);
   
-    // compare the buttonState to its previous state
-    if (buttonState != lastButtonState) {
-      if (buttonState == LOW) {
-        // if the current state is LOW then the button was pushed.
-        if (coolDownTicks == 0)
-        {
-          likes++; 
-          coolDownTicks = 2000;
-          eeprom_write_block((const void*)&likes, (void*)0, sizeof(likes));
-        }
-        else
-        {
-          // Cooldown wasn't done, restart cooldown as 'punishment' for pressing to soon.
-          coolDownTicks = 2000;
-        }
+  ////////////// 
+  //Manage the button.
+  
+  // Read current button state.
+  buttonState = digitalRead(buttonpin);
+
+  // compare the buttonState to its previous state
+  if (buttonState != lastButtonState) {
+    if (buttonState == LOW) {
+      // if the current state is LOW then the button was pushed.
+      if (coolDownTicks == 0)
+      {
+        likes++; 
+        coolDownTicks = 2000;
+        eeprom_write_block((const void*)&likes, (void*)0, sizeof(likes));
       }
+      else
+      {
+        // Cooldown wasn't done, restart cooldown as 'punishment' for pressing too soon.
+        coolDownTicks = 3000;
+      }
+      // There was an interaction, reset the sleep timer.
+      timer = 0;
     }
-    // save the current state as the last state, 
-    // for next time through the loop
+  }
+  // save the current state as the last state, 
+  // for next time through the loop
+  lastButtonState = buttonState;
+
+  if (timer > 30000)
+  {
+    digitalWrite(digit1pin,0);
+    digitalWrite(digit3pin,0);
+    digitalWrite(digit2pin,0);  
+    sleepNow();     // sleep function called here
+//    coolDownTicks = 100;
     lastButtonState = buttonState;
   }
   
