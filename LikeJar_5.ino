@@ -6,6 +6,7 @@
 // Soldered on a perfboard with a Kingbright 3 digit 7 segment common cathode LED module.
 
 // Version history:
+// 0.95: Added check to ignore the button press that wakes the Atmega.
 // 0.94: Added basic avr Sleep untill interrupt. Removed Narcoleptic_m8, didn't work.
 // 0.93: Added Narcoleptic_m8 library and sleep function.
 // 0.92: Beta for 5th version (button pin changed to hardware interrupt pin).
@@ -56,16 +57,19 @@ const int digit3pin = A1;
 const int buttonpin = 2;
           
 long ticks = 0;
-const byte reset = 6 ;
+byte reset = 6;
 const byte divide = 1;
-int likes;                    // The number of button presses.
+long likes;                     // The number of button presses.
 int num;
 int value;                    // The number displayed on the LEDs.
 int n = 0;
 int buttonState = 0;          // Current state of the button.
 int lastButtonState = 0;      // Previous state of the button.
 long coolDownTicks = 0;       // Hold delay before a new button press is registered.
-unsigned long timer = 0;    
+long timer = 0;               // Tick counter, helps count.
+int ignorePress = 0;          // Ignore the button press when coming out of sleep.
+long glowstart = 0;           // To fade in, and out the display.
+long currentglow = 0;         // To fade in, and out the display.
                                  
 void setup()
 {
@@ -80,7 +84,6 @@ void setup()
   pinMode(digit2pin, OUTPUT);
   pinMode(digit3pin, OUTPUT);
 
-  // Setup specific for prototype 2.
   // Pullup resistor on button pin
   pinMode(buttonpin, INPUT);
   digitalWrite(buttonpin, HIGH);       // turn on pullup resistor
@@ -108,22 +111,6 @@ void setup()
 
   // Read the number of Likes from last run.
   eeprom_read_block((void*)&likes, (void*)0, sizeof(likes));
-  
-  /* Now it is time to enable an interrupt. In the function call
-   * attachInterrupt(A, B, C)
-   * A   can be either 0 or 1 for interrupts on pin 2 or 3.  
-   *
-   * B   Name of a function you want to execute while in interrupt A.
-   *
-   * C   Trigger mode of the interrupt pin. can be:
-   *             LOW        a low level trigger
-   *             CHANGE     a change in level trigger
-   *             RISING     a rising edge of a level trigger
-   *             FALLING    a falling edge of a level trigger
-   *
-   * In all but the IDLE sleep modes only LOW can be used.
-   */
-  attachInterrupt(0, wakeUpNow, LOW); // use interrupt 0 (pin 2) and run function
   
   // Serial is only used for debugging.
   // Serial.begin(115200);
@@ -184,6 +171,7 @@ void sleepNow()         // here we put the arduino to sleep
    */
 
   attachInterrupt(0,wakeUpNow, LOW); // use interrupt 0 (pin 2) and run function
+  attachInterrupt(1,wakeUpNow, LOW); // use interrupt 1 (pin 3) and run function
   // wakeUpNow when pin 2 gets LOW
 
   sleep_mode();            // here the device is actually put to sleep!!
@@ -234,7 +222,11 @@ void loop()
   if (buttonState != lastButtonState) {
     if (buttonState == LOW) {
       // if the current state is LOW then the button was pushed.
-      if (coolDownTicks == 0)
+      if (ignorePress == 1)
+      {
+        ignorePress = 0;
+      }
+      else if (coolDownTicks == 0)
       {
         likes++; 
         coolDownTicks = 2000;
@@ -247,20 +239,33 @@ void loop()
       }
       // There was an interaction, reset the sleep timer.
       timer = 0;
+      // Reset the dim value.
+      reset = 6;
     }
   }
   // save the current state as the last state, 
   // for next time through the loop
   lastButtonState = buttonState;
 
-  if (timer > 30000)
+  // The timer that sleeps the device.
+  // 30000 ticks is about 26 seconds.
+  // 2076921 is about 30 minutes.
+  if (timer > 2076921)
+  //if (timer > 10000)
+  {
+    reset = 20;
+  }
+
+  // 8307692 is about 2 hours.
+  if (timer > 8307692)
+  //if (timer > 30000)
   {
     digitalWrite(digit1pin,0);
     digitalWrite(digit3pin,0);
     digitalWrite(digit2pin,0);  
     sleepNow();     // sleep function called here
-//    coolDownTicks = 100;
-    lastButtonState = buttonState;
+    ignorePress = 1;
+    timer = 0;
   }
   
   ////////////// 
@@ -280,7 +285,7 @@ void loop()
   }
 
   // Middle significant digit  
-  if(n == 2)
+  else if(n == 3)
   {
     digitalWrite(digit1pin,0);
     digitalWrite(digit3pin,0);
@@ -290,7 +295,7 @@ void loop()
   }
 
   // Least significant digit  
-  if(n == 3)
+  else if(n == 5)
   {
     digitalWrite(digit1pin,0);
     digitalWrite(digit2pin,0);
@@ -306,7 +311,7 @@ void loop()
   } 
   
   // The rest of the time the leds are off, saves 10 mA power.
-  if(n > 3)
+  else
   {
      digitalWrite(digit1pin,0);
      digitalWrite(digit2pin,0);
