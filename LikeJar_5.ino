@@ -221,6 +221,14 @@ void loop()
   // compare the buttonState to its previous state
   if (buttonState != lastButtonState) {
     if (buttonState == LOW) {
+      // Reset Like counter if pin 6 is pulled low and the like button is pressed.
+      if (digitalRead(6) == LOW)
+      {
+        likes = 0;
+        ignorePress = 1;
+        eeprom_write_block((const void*)&likes, (void*)0, sizeof(likes));
+      }
+      
       // if the current state is LOW then the button was pushed.
       if (ignorePress == 1)
       {
