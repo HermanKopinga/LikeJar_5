@@ -63,7 +63,9 @@ long likes;                     // The number of button presses.
 int num;
 int value;                    // The number displayed on the LEDs.
 int n = 0;
-int buttonState = 0;          // Current state of the button.
+int buttonState = 0;          // Current state of the Like button.
+int significantState = 0;     // Current state of the Significance pin. (not really a button)
+int moduloExtra = 1;          // Tot display more significant digits. (thousands)
 int lastButtonState = 0;      // Previous state of the button.
 long coolDownTicks = 0;       // Hold delay before a new button press is registered.
 long timer = 0;               // Tick counter, helps count.
@@ -213,11 +215,12 @@ void loop()
   }
   
   ////////////// 
-  //Manage the button.
+  //Manage the buttons.
   
   // Read current button state.
   buttonState = digitalRead(buttonpin);
-
+  significantState = digitalRead(5);
+  
   // compare the buttonState to its previous state
   if (buttonState != lastButtonState) {
     if (buttonState == LOW) {
@@ -251,6 +254,7 @@ void loop()
       reset = 6;
     }
   }
+  
   // save the current state as the last state, 
   // for next time through the loop
   lastButtonState = buttonState;
@@ -282,14 +286,22 @@ void loop()
   // Write a digit at a time for 20 ticks.
   n = ticks/divide;
   
+  if (significantState == LOW)
+  {
+    moduloExtra = 1000;
+  }
+  else
+  {
+    moduloExtra = 1;
+  }
+  
   // Most significant digit
   if(n == 1)
   {
     digitalWrite(digit2pin,0);
     digitalWrite(digit3pin,0);
-    sevenSegWrite(value % 1000 / 100, 1);
+    sevenSegWrite(value % (1000*moduloExtra) / (100*moduloExtra), 1);
     digitalWrite(digit1pin,1);
-
   }
 
   // Middle significant digit  
@@ -297,9 +309,15 @@ void loop()
   {
     digitalWrite(digit1pin,0);
     digitalWrite(digit3pin,0);
-    sevenSegWrite(value % 100 / 10, 1);
+    if (significantState == LOW)
+    {
+      sevenSegWrite(value % (100*moduloExtra) / (10*moduloExtra), 0);
+    }
+    else
+    {
+      sevenSegWrite(value % (100*moduloExtra) / (10*moduloExtra), 1);
+    }
     digitalWrite(digit2pin,1);
-
   }
 
   // Least significant digit  
@@ -309,11 +327,11 @@ void loop()
     digitalWrite(digit2pin,0);
     if (coolDownTicks > 0)
     {
-      sevenSegWrite(value % 10, 0);
+      sevenSegWrite(value % (10*moduloExtra) / moduloExtra, 0);
     }
     else
     {
-      sevenSegWrite(value % 10, 1);
+      sevenSegWrite(value % (10*moduloExtra) / moduloExtra, 1);
     }
     digitalWrite(digit3pin,1);
   } 
