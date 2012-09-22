@@ -3,9 +3,10 @@
 
 // Like button by Herman Kopinga herman@kopinga.nl
 // Works together with a homebrew Arduino on an Atmega8
-// Soldered on a perfboard with a Kingbright 3 digit 7 segment common cathode LED module.
 
 // Version history:
+// 0.97: Thousands now show on every boot for 2 seconds. Added bright mode (more power, more light).
+// 0.96: Added Thousands
 // 0.95: Added check to ignore the button press that wakes the Atmega.
 // 0.94: Added basic avr Sleep untill interrupt. Removed Narcoleptic_m8, didn't work.
 // 0.93: Added Narcoleptic_m8 library and sleep function.
@@ -58,20 +59,27 @@ const int buttonpin = 2;
           
 long ticks = 0;
 byte reset = 6;
+byte resetWant = 6;
 const byte divide = 1;
 long likes;                     // The number of button presses.
 int num;
 int value;                    // The number displayed on the LEDs.
 int n = 0;
 int buttonState = 0;          // Current state of the Like button.
-int significantState = 0;     // Current state of the Significance pin. (not really a button)
-int moduloExtra = 1;          // Tot display more significant digits. (thousands)
+unsigned long significantStateMillis = 0;
+int moduloExtra = 1;          // To display more significant digits. (thousands)
 int lastButtonState = 0;      // Previous state of the button.
 long coolDownTicks = 0;       // Hold delay before a new button press is registered.
 long timer = 0;               // Tick counter, helps count.
 int ignorePress = 0;          // Ignore the button press when coming out of sleep.
-long glowstart = 0;           // To fade in, and out the display.
-long currentglow = 0;         // To fade in, and out the display.
+
+int dig1Min = 1;
+int dig1Max = 1;
+int dig2Min = 3;
+int dig2Max = 3;
+int dig3Min = 5;
+int dig3Max = 5;
+
                                  
 void setup()
 {
@@ -219,17 +227,30 @@ void loop()
   
   // Read current button state.
   buttonState = digitalRead(buttonpin);
-  significantState = digitalRead(5);
   
   // compare the buttonState to its previous state
   if (buttonState != lastButtonState) {
     if (buttonState == LOW) {
+
       // Reset Like counter if pin 6 is pulled low and the like button is pressed.
       if (digitalRead(6) == LOW)
       {
         likes = 0;
         ignorePress = 1;
         eeprom_write_block((const void*)&likes, (void*)0, sizeof(likes));
+      }
+
+      // Set Brightlight mode if pin 5 is pulled low and the like button is pressed.
+      if (digitalRead(5) == LOW)
+      {
+         ignorePress = 1;
+         dig1Min = 0;
+         dig1Max = 3;
+         dig2Min = 4;
+         dig2Max = 6;
+         dig3Min = 7;
+         dig3Max = 9;
+         reset = resetWant = 9;
       }
       
       // if the current state is LOW then the button was pushed.
@@ -251,7 +272,7 @@ void loop()
       // There was an interaction, reset the sleep timer.
       timer = 0;
       // Reset the dim value.
-      reset = 6;
+      reset = resetWant;
     }
   }
   
@@ -272,11 +293,11 @@ void loop()
   if (timer > 8307692)
   //if (timer > 30000)
   {
+    ignorePress = 1;
     digitalWrite(digit1pin,0);
     digitalWrite(digit3pin,0);
     digitalWrite(digit2pin,0);  
     sleepNow();     // sleep function called here
-    ignorePress = 1;
     timer = 0;
   }
   
@@ -286,17 +307,24 @@ void loop()
   // Write a digit at a time for 20 ticks.
   n = ticks/divide;
   
-  if (significantState == LOW)
+  if (digitalRead(5) == LOW)
+  {
+    significantStateMillis = millis();
+  }
+  
+  if (significantStateMillis + 2000 > millis())
   {
     moduloExtra = 1000;
+    moduloIndicator = 0;
   }
   else
   {
     moduloExtra = 1;
+    moduloIndicator = 1;
   }
   
   // Most significant digit
-  if(n == 1)
+  if(n >= dig1Min && n <= dig1Max)
   {
     digitalWrite(digit2pin,0);
     digitalWrite(digit3pin,0);
@@ -305,23 +333,16 @@ void loop()
   }
 
   // Middle significant digit  
-  else if(n == 3)
+  else if(n >= dig2Min && n <= dig2Max)
   {
     digitalWrite(digit1pin,0);
     digitalWrite(digit3pin,0);
-    if (significantState == LOW)
-    {
-      sevenSegWrite(value % (100*moduloExtra) / (10*moduloExtra), 0);
-    }
-    else
-    {
-      sevenSegWrite(value % (100*moduloExtra) / (10*moduloExtra), 1);
-    }
+    sevenSegWrite(value % (100*moduloExtra) / (10*moduloExtra), moduloIndicator);
     digitalWrite(digit2pin,1);
   }
 
   // Least significant digit  
-  else if(n == 5)
+  else if(n >= dig3Min && n <= dig3Max)
   {
     digitalWrite(digit1pin,0);
     digitalWrite(digit2pin,0);
