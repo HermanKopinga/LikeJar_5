@@ -61,6 +61,7 @@ long ticks = 0;
 byte reset = 6;
 byte resetWant = 6;
 const byte divide = 1;
+int coolDownTicksSet = 20;
 long likes;                     // The number of button presses.
 int num;
 int value;                    // The number displayed on the LEDs.
@@ -72,6 +73,7 @@ int lastButtonState = 0;      // Previous state of the button.
 long coolDownTicks = 0;       // Hold delay before a new button press is registered.
 long timer = 0;               // Tick counter, helps count.
 int ignorePress = 0;          // Ignore the button press when coming out of sleep.
+int moduloIndicator = 1;
 
 int dig1Min = 1;
 int dig1Max = 1;
@@ -79,10 +81,19 @@ int dig2Min = 3;
 int dig2Max = 3;
 int dig3Min = 5;
 int dig3Max = 5;
-
                                  
 void setup()
 {
+
+reset = resetWant = 9;
+dig1Min = 0;
+dig1Max = 3;
+dig2Min = 4;
+dig2Max = 6;
+dig3Min = 7;
+dig3Max = 9;
+
+
   //Set all the LED pins as output.
   for (byte pinCount = 0; pinCount < 9; pinCount++)
   {
@@ -261,13 +272,13 @@ void loop()
       else if (coolDownTicks == 0)
       {
         likes++; 
-        coolDownTicks = 2000;
+        coolDownTicks = coolDownTicksSet;
         eeprom_write_block((const void*)&likes, (void*)0, sizeof(likes));
       }
       else
       {
         // Cooldown wasn't done, restart cooldown as 'punishment' for pressing too soon.
-        coolDownTicks = 3000;
+        coolDownTicks = coolDownTicksSet * 1,5;
       }
       // There was an interaction, reset the sleep timer.
       timer = 0;
