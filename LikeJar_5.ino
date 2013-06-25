@@ -2,9 +2,10 @@
 #include <avr/sleep.h>
 
 // Like button by Herman Kopinga herman@kopinga.nl
-// Works together with a homebrew Arduino on an Atmega8
+// Works together with a homebrew Arduino on an Atmega8.
 
 // Version history:
+// 0.98: Added switch between regular and Brightlight mode. Updated comments, finally resolved the License.
 // 0.97: Thousands now show on every boot for 2 seconds. Added bright mode (more power, more light).
 // 0.96: Added Thousands
 // 0.95: Added check to ignore the button press that wakes the Atmega.
@@ -14,16 +15,23 @@
 // 0.91: Beta for 2nd prototype.
 // 0.9: Beta version removed test code & redundant variables and improved documentation.
 
-// Wishlist:
-// - Glowing effect like Apple macbook.
-// - Sleep controller in between glows.
-// - Wake on like or shake.
+// Stands on the soulders of:
 
-// Software based on:
-// Arduino 7 segment display example software
-// http://www.hacktronics.com/Tutorials/arduino-and-7-segment-led.html
+/* Arduino 7 segment display example software
+   http://www.hacktronics.com/Tutorials/arduino-and-7-segment-led.html */
+
+/* Sleep Demo Serial
+ * Copyright (C) 2006 MacSimski 2006-12-30
+ * Copyright (C) 2007 D. Cuartielles 2007-07-08 - Mexico DF 
+ *  This program is free software: you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation, either version 3 of the License, or
+ *  (at your option) any later version.
+ */
  
-// License: none whatsoever.
+/* As a result the license for this project is GNU General Public License version 3.
+ *  You should have received a copy of the GNU General Public License
+ *  along with this program.  If not, see <http://www.gnu.org/licenses/>. */
  
 // Global variables
 
@@ -61,7 +69,7 @@ long ticks = 0;
 byte reset = 6;
 byte resetWant = 6;
 const byte divide = 1;
-int coolDownTicksSet = 20;
+int coolDownTicksSet = 2000;
 long likes;                     // The number of button presses.
 int num;
 int value;                    // The number displayed on the LEDs.
@@ -71,7 +79,7 @@ unsigned long significantStateMillis = 0;
 int moduloExtra = 1;          // To display more significant digits. (thousands)
 int lastButtonState = 0;      // Previous state of the button.
 long coolDownTicks = 0;       // Hold delay before a new button press is registered.
-long timer = 0;               // Tick counter, helps count.
+long dimTimer = 0;            // Dual timer, for dimming display and starting sleep mode.
 int ignorePress = 0;          // Ignore the button press when coming out of sleep.
 int moduloIndicator = 1;
 
@@ -84,15 +92,6 @@ int dig3Max = 5;
                                  
 void setup()
 {
-
-reset = resetWant = 9;
-dig1Min = 0;
-dig1Max = 3;
-dig2Min = 4;
-dig2Max = 6;
-dig3Min = 7;
-dig3Max = 9;
-
 
   //Set all the LED pins as output.
   for (byte pinCount = 0; pinCount < 9; pinCount++)
@@ -128,7 +127,8 @@ dig3Max = 9;
   digitalWrite(7, HIGH);
   digitalWrite(8, HIGH);
   
-  writeDot(1);          // start with the "dot" off
+  // Start with all 'dots' off.
+  digitalWrite(sevenSegPins[7], 1);
 
   // Read the number of Likes from last run.
   eeprom_read_block((void*)&likes, (void*)0, sizeof(likes));
@@ -206,11 +206,6 @@ void sleepNow()         // here we put the arduino to sleep
 
 }
 
-void writeDot(byte dot) 
-{
-  digitalWrite(sevenSegPins[7], dot);
-}
-
 // Function that writes the passed digit to the output pins. 
 // Depending on which cathode is grounded another digit is lit.
 void sevenSegWrite(byte digit, byte dot) 
@@ -218,14 +213,15 @@ void sevenSegWrite(byte digit, byte dot)
   for (byte loopCount = 0; loopCount < 8; ++loopCount) {
     digitalWrite(sevenSegPins[loopCount], sevenSegDigits[digit][loopCount]);
   }
-  writeDot(dot);
+
+  digitalWrite(sevenSegPins[7], dot);
 }
 
 void loop()
 {
   // Always increase the ticks counter.
   ticks++;
-  timer++;
+  dimTimer++;
   
   // Decrease the cooldown if it is currently running.
   if (coolDownTicks > 0)
@@ -241,6 +237,8 @@ void loop()
   
   // compare the buttonState to its previous state
   if (buttonState != lastButtonState) {
+    // If the current state is LOW then the button was pushed.
+    // This construct makes sure only one button press is registered despite the loop running more often.
     if (buttonState == LOW) {
 
       // Reset Like counter if pin 6 is pulled low and the like button is pressed.
@@ -251,38 +249,60 @@ void loop()
         eeprom_write_block((const void*)&likes, (void*)0, sizeof(likes));
       }
 
-      // Set Brightlight mode if pin 5 is pulled low and the like button is pressed.
+      // Switch on/off Brightlight mode if pin 5 is pulled low and the like button is pressed.
+      // Brightlight mode makes the display brighter by not turning it off.
       if (digitalRead(5) == LOW)
       {
-         ignorePress = 1;
-         dig1Min = 0;
-         dig1Max = 3;
-         dig2Min = 4;
-         dig2Max = 6;
-         dig3Min = 7;
-         dig3Max = 9;
-         reset = resetWant = 9;
+        // Ignore this button press, it's not a like, its functional.
+        ignorePress = 1;
+
+        // Determine the current state of Brightlight mode.
+        if (resetWant != 9)
+        {
+          dig1Min = 0;
+          dig1Max = 3;
+          dig2Min = 4;
+          dig2Max = 6;
+          dig3Min = 7;
+          dig3Max = 9;
+          reset = resetWant = 9;
+        }
+        else
+        {
+          dig1Min = 1;
+          dig1Max = 1;
+          dig2Min = 3;
+          dig2Max = 3;
+          dig3Min = 5;
+          dig3Max = 5;
+          reset = resetWant = 6;
+        }
       }
       
-      // if the current state is LOW then the button was pushed.
+      // Determine if this button press was a like, if so register it.
       if (ignorePress == 1)
       {
         ignorePress = 0;
       }
       else if (coolDownTicks == 0)
       {
+        // Another Like, JAY!
         likes++; 
+        // Set the cooldown timer, no likes will be 
         coolDownTicks = coolDownTicksSet;
+        // Write the new like value to the eeprom so it is saved even is power is lost.
         eeprom_write_block((const void*)&likes, (void*)0, sizeof(likes));
       }
       else
       {
-        // Cooldown wasn't done, restart cooldown as 'punishment' for pressing too soon.
+        // Cooldown wasn't done, restart (and increase) cooldown as 'punishment' for pressing too soon.
         coolDownTicks = coolDownTicksSet * 1,5;
       }
+
       // There was an interaction, reset the sleep timer.
-      timer = 0;
-      // Reset the dim value.
+      dimTimer = 0;
+      
+      // There was an interaction, reset the dim value.
       reset = resetWant;
     }
   }
@@ -294,14 +314,14 @@ void loop()
   // The timer that sleeps the device.
   // 30000 ticks is about 26 seconds.
   // 2076921 is about 30 minutes.
-  if (timer > 2076921)
+  if (dimTimer > 2076921)
   //if (timer > 10000)
   {
     reset = 20;
   }
 
   // 8307692 is about 2 hours.
-  if (timer > 8307692)
+  if (dimTimer > 8307692)
   //if (timer > 30000)
   {
     ignorePress = 1;
@@ -309,7 +329,7 @@ void loop()
     digitalWrite(digit3pin,0);
     digitalWrite(digit2pin,0);  
     sleepNow();     // sleep function called here
-    timer = 0;
+    dimTimer = 0;
   }
   
   ////////////// 
