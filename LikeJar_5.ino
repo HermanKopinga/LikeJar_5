@@ -89,6 +89,17 @@ int dig2Min = 3;
 int dig2Max = 3;
 int dig3Min = 5;
 int dig3Max = 5;
+
+static int vccRead (byte us =250) {
+  analogRead(6);    // set up "almost" the proper ADC readout
+  bitSet(ADMUX, 3); // then fix it to switch to channel 14
+  delayMicroseconds(us); // delay substantially improves accuracy
+  bitSet(ADCSRA, ADSC);
+  while (bit_is_set(ADCSRA, ADSC))
+    ;
+  word x = ADC;
+  return x ? (1100L * 1023) / x : -1;
+}
                                  
 void setup()
 {
@@ -134,7 +145,8 @@ void setup()
   eeprom_read_block((void*)&likes, (void*)0, sizeof(likes));
   
   // Serial is only used for debugging.
-  // Serial.begin(115200);
+  Serial.begin(9600);
+  Serial.println(vccRead());
 }
 
 void wakeUpNow()        // here the interrupt is handled after wakeup
